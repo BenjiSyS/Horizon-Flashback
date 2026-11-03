@@ -1,0 +1,7 @@
+/.upstream/
+/target/
+/.local/
+*.hmod
+*.hnmod
+*.hfr
+__pycache__/

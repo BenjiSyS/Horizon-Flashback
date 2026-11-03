@@ -1,0 +1,81 @@
+[mod]
+id = "flashback"
+version = "0.1.0"
+priority = 100
+
+[compatibility]
+horizon_revision = "d91353641866b85d851926da3b1a9fdee46392f1"
+
+[[crate]]
+id = "engine"
+path = "engine"
+
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "flashback_native"
+source = "runtime.rs"
+
+[[injection]]
+id = "unload"
+kind = "HEAD"
+hook = "client_level_unload"
+hook_version = 1
+helper = "unload.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
+[[injection]]
+id = "tick"
+kind = "HEAD"
+hook = "tick"
+hook_version = 1
+helper = "tick.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
+[[injection]]
+id = "key"
+kind = "HEAD"
+hook = "key"
+hook_version = 1
+helper = "key.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}, {name = "key", ty = "&str", value = "key"}, {name = "pressed", ty = "bool", value = "pressed"}]
+
+[[injection]]
+id = "camera"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::perspective::Game<'_>::camera_view"
+helper = "camera.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
+[[injection]]
+id = "fov"
+kind = "HEAD"
+hook = "compute_fov"
+hook_version = 1
+helper = "fov.rs"
+bindings = [{name = "game", ty = "&Game<'_>", value = "self"}, {name = "position", ty = "[f64; 3]", value = "camera"}, {name = "degrees", ty = "&mut f32", value = "degrees"}]
+
+[[injection]]
+id = "screen"
+kind = "HEAD"
+hook = "screen_render_post"
+hook_version = 1
+helper = "screen.rs"
+bindings = [{name = "game", ty = "&Game<'_>", value = "self"}, {name = "batch", ty = "&mut HudBatch", value = "batch"}]
+
+[[injection]]
+id = "click"
+kind = "HEAD"
+hook = "screen_mouse_button_pressed_pre"
+hook_version = 1
+helper = "click.rs"
+bindings = [{name = "game", ty = "&Game<'_>", value = "self"}, {name = "screen", ty = "&NativeScreenView<'_>", value = "screen"}, {name = "button", ty = "i32", value = "button"}, {name = "canceled", ty = "&mut bool", value = "canceled"}]
+
+[[injection]]
+id = "mod-list"
+kind = "HEAD"
+hook = "mods"
+hook_version = 1
+helper = "mods.rs"
+bindings = [{name = "mods", ty = "&mut Vec<NativeMod>", value = "mods"}]

@@ -1,0 +1,11 @@
+{
+  "horizon_repository": "https://github.com/horizon-rust/horizon",
+  "horizon_revision": "d91353641866b85d851926da3b1a9fdee46392f1",
+  "horizon_mixins_repository": "https://github.com/horizon-rust/horizon-mixins",
+  "horizon_mixins_revision": "e8cd0aa38cffef49cb2e088ef716baa107148c02",
+  "flashback_repository": "https://github.com/Moulberry/Flashback",
+  "flashback_revision": "bf046b763ddf466bdc1b6d9c6cc7ba06e527f3e2",
+  "native_runtime_verified": false,
+  "feature_parity_verified": false,
+  "performance_verified": false
+}
