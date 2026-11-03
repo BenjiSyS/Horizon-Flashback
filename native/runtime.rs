@@ -42,7 +42,7 @@ fn state(game: &Game<'_>) -> Rc<RefCell<Session>> {
     })
 }
 
-pub fn tick(game: &mut Game<'_>) {
+pub(super) fn tick(game: &mut Game<'_>) {
     if !supported(game) {
         return;
     }
@@ -52,7 +52,7 @@ pub fn tick(game: &mut Game<'_>) {
     state(game).borrow_mut().tick(0.05, dimension.as_deref());
 }
 
-pub fn unload(game: &Game<'_>) {
+pub(super) fn unload(game: &Game<'_>) {
     if !supported(game) {
         return;
     }
@@ -65,7 +65,7 @@ pub fn unload(game: &Game<'_>) {
     session.playing = false;
 }
 
-pub fn key(game: &mut Game<'_>, key: &str) {
+pub(super) fn key(game: &mut Game<'_>, key: &str) {
     if !supported(game) {
         return;
     }
@@ -141,7 +141,7 @@ pub fn key(game: &mut Game<'_>, key: &str) {
     }
 }
 
-pub fn camera(
+pub(super) fn camera(
     game: &mut Game<'_>,
     original: Option<(glam::DVec3, f32, f32)>,
 ) -> Option<(glam::DVec3, f32, f32)> {
@@ -167,7 +167,7 @@ pub fn camera(
         .or(original)
 }
 
-pub fn fov(game: &Game<'_>, position: [f64; 3], degrees: &mut f32) {
+pub(super) fn fov(game: &Game<'_>, position: [f64; 3], degrees: &mut f32) {
     if !supported(game) {
         return;
     }
@@ -270,7 +270,7 @@ fn load(session: &mut Session) {
     };
 }
 
-pub fn screen(game: &Game<'_>, batch: &mut HudBatch) {
+pub(super) fn screen(game: &Game<'_>, batch: &mut HudBatch) {
     if !supported(game) || game.native_mod_screen() != Some("flashback") {
         return;
     }
@@ -328,7 +328,7 @@ pub fn screen(game: &Game<'_>, batch: &mut HudBatch) {
     );
 }
 
-pub fn click(game: &Game<'_>, mouse: [f32; 2], button: i32) -> bool {
+pub(super) fn click(game: &Game<'_>, mouse: [f32; 2], button: i32) -> bool {
     if !supported(game) || game.native_mod_screen() != Some("flashback") || button != 0 {
         return false;
     }

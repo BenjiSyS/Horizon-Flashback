@@ -10,13 +10,13 @@ validation are separate gates.
 | Replay storage | Version 1 `.hfr`, framed JSON, CRC32, bounded records and total input | Core tests; not Java replay compatible |
 | Seeking | Snapshot lookup and event reconstruction, including backwards seeks | Core tests |
 | Recording controls | Start/pause/resume/stop core; native camera start/stop | Core lifecycle tests; native runtime not tested |
-| Native capture | Camera position, yaw and pitch | Hook integration under development |
+| Native capture | Camera position, yaw, pitch and FOV | Native adapter typechecks; live behavior not tested |
 | Native world capture | Not implemented | No claim |
 | Offline world playback | Not implemented | No claim |
 | Camera timeline | Step, linear, Catmull-Rom positions, shortest-angle rotations | Core tests |
 | FOV/speed/time tracks | Core sampling and serialization | Core tests; incomplete native/editor exposure |
 | Editor history | Camera key copy, move, delete, undo/redo | Core tests |
-| Native editor | Basic toolbar, camera row, seek, key insertion, save/load | Native source adapter; live UI not tested |
+| Native editor | Basic toolbar, camera row, seek, key insertion, save/load | Native adapter typechecks; live UI not tested |
 | Original Flashback UI parity | Not implemented | No screenshot comparison |
 | Orbit/entity tracking/shake/freeze/timelapse/audio/block override | Not implemented | No claim |
 | Entity/particle/audio/skin rendering parity | Not implemented | No claim |
@@ -59,6 +59,9 @@ py -3.12 -I tools/native.py build
 run it or verify playback. `build` also omits the optional audio/controller
 features. A successful `plan` checks AST targets, not Rust borrowing/types.
 `target/native-validation.json` records completed actions and source hashes.
+Bundles and transformed stages use separate directories for each source revision,
+so concurrent/repeated checks do not replace a stage being compiled. Bundle reuse
+verifies every staged source byte and rejects unexpected edits.
 Prepared Minecraft resources must come from the player's own installation and
 must never be published.
 

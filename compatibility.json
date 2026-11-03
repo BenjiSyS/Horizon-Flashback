@@ -7,5 +7,7 @@
   "flashback_revision": "bf046b763ddf466bdc1b6d9c6cc7ba06e527f3e2",
   "native_runtime_verified": false,
   "feature_parity_verified": false,
-  "performance_verified": false
+  "performance_verified": false,
+  "native_typecheck_verified": true,
+  "native_typecheck_features": "--no-default-features (audio/controllers disabled)"
 }

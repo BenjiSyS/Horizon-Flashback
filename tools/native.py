@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tarfile
 
@@ -23,16 +22,26 @@ def revision(path):
 
 def bundle():
     # Copy only explicit source inputs: never the ignored reference trees or recordings.
-    root = ROOT / "target" / "native-bundle" / "flashback"
-    root.mkdir(parents=True, exist_ok=True)
+    inputs = {}
     for path in (ROOT / "native").iterdir():
         if path.suffix in (".rs", ".toml"):
-            shutil.copy2(path, root / path.name)
-    engine = root / "engine"
-    (engine / "src").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / "Cargo.toml", engine / "Cargo.toml")
+            inputs[path.name] = path.read_bytes()
+    inputs["engine/Cargo.toml"] = (ROOT / "Cargo.toml").read_bytes()
     for path in (ROOT / "src").glob("*.rs"):
-        shutil.copy2(path, engine / "src" / path.name)
+        inputs[f"engine/src/{path.name}"] = path.read_bytes()
+    signature = hashlib.sha256()
+    for name, data in sorted(inputs.items()):
+        signature.update(name.encode() + b"\0" + len(data).to_bytes(8, "little") + data)
+    root = ROOT / "target" / "native-bundles" / signature.hexdigest() / "flashback"
+    if root.exists():
+        existing = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+        if existing != inputs:
+            raise ValueError(f"Immutable bundle was modified or interrupted: {root}")
+    else:
+        for name, data in inputs.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
     return root.parent
 
 

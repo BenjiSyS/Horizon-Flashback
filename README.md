@@ -6,6 +6,8 @@ Feature status and runtime validation must be checked before installing or submi
 
 See [feature status and native build instructions](docs/STATUS.md),
 [pinned source revisions](compatibility.json), and [permission record](docs/PERMISSION.md).
+The [validation snapshot](docs/VALIDATION.md) separates core tests, native compile
+checks, and the live gameplay verification that still needs to happen.
 
 Upstream projects:
 - [Flashback by Moulberry](https://github.com/Moulberry/Flashback)

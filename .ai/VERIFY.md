@@ -5,6 +5,7 @@
 
 ## Unit tests
 `cargo test --locked`
+`py -3.12 -I tests/test_native_tools.py`
 
 ## Lint
 `cargo clippy --all-targets --locked -- -D warnings`
