@@ -3,6 +3,52 @@ extern crate self as glam;
 extern crate self as horizon_client;
 extern crate self as winit;
 use std::sync::Arc;
+pub mod net {
+    #[derive(Default)]
+    pub struct Session {
+        pub address: String,
+        pub tick: Option<f64>,
+    }
+    pub mod flashback_net {
+        pub use horizon_flashback as engine;
+        pub const PREFIX: &str = "flashback-replay:";
+        pub struct Progress {
+            pub tick: f64,
+            pub paused: bool,
+            pub ended: bool,
+            pub duration: Option<u64>,
+        }
+        pub fn progress(session: &super::Session) -> Option<Progress> {
+            session.tick.map(|tick| Progress {
+                tick,
+                paused: true,
+                ended: false,
+                duration: None,
+            })
+        }
+        pub fn recording_status() -> String {
+            String::new()
+        }
+        pub fn toggle_recording(_: &std::path::Path) -> Result<String, String> {
+            Err("No recording in host double".into())
+        }
+        pub fn latest(_: &std::path::Path) -> Result<std::path::PathBuf, String> {
+            Err("No tapes in host double".into())
+        }
+        pub fn replay_address(path: &std::path::Path, tick: u64) -> String {
+            format!("{PREFIX}{tick}:{}", path.display())
+        }
+        pub fn parse_address(_: &str) -> Result<Option<(u64, std::path::PathBuf)>, String> {
+            Ok(None)
+        }
+        pub fn toggle_pause(_: &super::Session) -> bool {
+            false
+        }
+        pub fn set_speed(_: &super::Session, _: f64) -> bool {
+            false
+        }
+    }
+}
 
 pub mod window {
     pub struct Window;
@@ -54,6 +100,9 @@ struct View {
     x_rot: f32,
 }
 struct Game<'a> {
+    remote: Option<Remote>,
+    title: Option<()>,
+    integrated_starting: Option<()>,
     view: View,
     window: Option<Arc<window::Window>>,
     options: Options,
@@ -62,9 +111,15 @@ struct Game<'a> {
     open: bool,
     dimension: &'a str,
 }
+struct Remote {
+    session: net::Session,
+}
 impl Game<'_> {
     fn new() -> Self {
         Self {
+            remote: None,
+            title: None,
+            integrated_starting: None,
             view: View::default(),
             window: Some(Arc::new(window::Window)),
             options: Options {
@@ -83,6 +138,9 @@ impl Game<'_> {
     }
     fn native_window(&self) -> bool {
         true
+    }
+    fn connect_server(&mut self, _: &str, _: &str) -> Result<(), String> {
+        Err("No network in host double".into())
     }
     fn native_player(&self) -> Option<Player> {
         Some(Player {
@@ -172,4 +230,17 @@ fn toolbar_seek_click_and_save_failure_are_visible() {
             .iter()
             .any(|line| line.contains("Save failed: Disk access disabled"))
     );
+}
+
+#[test]
+fn replay_step_at_extreme_timestamp_does_not_overflow() {
+    let mut game = Game::new();
+    game.open = true;
+    game.remote = Some(Remote {
+        session: net::Session {
+            address: "flashback-replay:0:test.hfnet".into(),
+            tick: Some(f64::MAX),
+        },
+    });
+    flashback_native::key(&mut game, "key.keyboard.right");
 }

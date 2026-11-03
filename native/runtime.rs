@@ -1,6 +1,7 @@
 // Native game glue. Preview sessions belong to live windows; split-screen is disabled.
 use super::Game;
 use horizon_client::hud::HudBatch;
+use horizon_client::net::flashback_net::{self as network, engine as horizon_flashback};
 use horizon_flashback::replay::{CameraPose, Vec3};
 use horizon_flashback::session::Session;
 use std::{
@@ -46,10 +47,38 @@ pub(super) fn tick(game: &mut Game<'_>) {
     if !supported(game) {
         return;
     }
+    let requested = state(game).borrow_mut().requested_seek.take();
+    if let Some(tick) = requested {
+        let address = game
+            .remote
+            .as_ref()
+            .map(|r| r.session.address.clone())
+            .unwrap_or_default();
+        if let Ok(Some((_, path))) = network::parse_address(&address)
+            && let Err(error) =
+                game.connect_server(&network::replay_address(&path, tick), "ReplayViewer")
+        {
+            state(game).borrow_mut().status = format!("Replay seek failed: {error}");
+        }
+    }
     let dimension = game
         .native_player()
         .map(|player| player.dimension.to_owned());
     state(game).borrow_mut().tick(0.05, dimension.as_deref());
+    if let Some(progress) = game
+        .remote
+        .as_ref()
+        .and_then(|r| network::progress(&r.session))
+    {
+        let storage = state(game);
+        let mut session = storage.borrow_mut();
+        session.playhead = progress.tick;
+        session.playing = !progress.paused && !progress.ended;
+        session.duration = progress
+            .duration
+            .unwrap_or(progress.tick.ceil() as u64)
+            .max(session.duration);
+    }
 }
 
 pub(super) fn unload(game: &Game<'_>) {
@@ -67,6 +96,31 @@ pub(super) fn unload(game: &Game<'_>) {
 
 pub(super) fn key(game: &mut Game<'_>, key: &str) {
     if !supported(game) {
+        return;
+    }
+    if key == game.native_mod_key("flashback", "world_record", "key.keyboard.f8") {
+        let result = directory().and_then(|root| network::toggle_recording(&root));
+        state(game).borrow_mut().status =
+            result.unwrap_or_else(|e| format!("World recording failed: {e}"));
+        return;
+    }
+    if key == game.native_mod_key("flashback", "world_open", "key.keyboard.f9")
+        && game.native_player().is_none()
+        && game.title.is_some()
+        && game.remote.is_none()
+        && game.integrated_starting.is_none()
+    {
+        let result = directory().and_then(|root| network::latest(&root));
+        match result {
+            Ok(path) => {
+                if let Err(error) =
+                    game.connect_server(&network::replay_address(&path, 0), "ReplayViewer")
+                {
+                    state(game).borrow_mut().status = format!("Replay open failed: {error}");
+                }
+            }
+            Err(error) => state(game).borrow_mut().status = error,
+        }
         return;
     }
     let editor_key = game.native_mod_key("flashback", "editor", "key.keyboard.f7");
@@ -97,6 +151,58 @@ pub(super) fn key(game: &mut Game<'_>, key: &str) {
     }
     if !open {
         return;
+    }
+    if game
+        .remote
+        .as_ref()
+        .is_some_and(|r| r.session.address.starts_with(network::PREFIX))
+    {
+        let address = game
+            .remote
+            .as_ref()
+            .map(|r| r.session.address.clone())
+            .unwrap_or_default();
+        match key {
+            "key.keyboard.space" => {
+                if let Some(remote) = &game.remote {
+                    network::toggle_pause(&remote.session);
+                }
+                return;
+            }
+            "key.keyboard.left" | "key.keyboard.right" | "key.keyboard.home" => {
+                let current = game
+                    .remote
+                    .as_ref()
+                    .and_then(|r| network::progress(&r.session))
+                    .map_or(0.0, |p| p.tick);
+                let tick = match key {
+                    "key.keyboard.left" => (current - 1.0).max(0.0) as u64,
+                    "key.keyboard.right" => (current as u64).saturating_add(1),
+                    _ => 0,
+                };
+                if let Ok(Some((_, path))) = network::parse_address(&address)
+                    && let Err(error) =
+                        game.connect_server(&network::replay_address(&path, tick), "ReplayViewer")
+                {
+                    state(game).borrow_mut().status = format!("Replay seek failed: {error}");
+                }
+                return;
+            }
+            "key.keyboard.minus" | "key.keyboard.equal" => {
+                if let Some(remote) = &game.remote {
+                    network::set_speed(
+                        &remote.session,
+                        if key == "key.keyboard.minus" {
+                            0.5
+                        } else {
+                            2.0
+                        },
+                    );
+                }
+                return;
+            }
+            _ => {}
+        }
     }
     let storage = state(game);
     let mut session = storage.borrow_mut();
@@ -287,7 +393,7 @@ pub(super) fn screen(game: &Game<'_>, batch: &mut HudBatch) {
     );
     game.native_text(
         batch,
-        "F6 Record   F7 Close   Space Play   K Key   N New",
+        "F6 Camera   F7 Close   F8 World REC   Space Play",
         [8.0, 22.0],
         0xbcbcc8,
         false,
@@ -319,13 +425,13 @@ pub(super) fn screen(game: &Game<'_>, batch: &mut HudBatch) {
         session.playhead, session.duration, session.status
     );
     game.native_text(batch, &label, [8.0, top + 65.0], 0xbcbcc8, false);
-    game.native_text(
-        batch,
-        "Camera preview only. Live world keeps running.",
-        [8.0, top + 81.0],
-        0xffb347,
-        false,
-    );
+    let network_status = network::recording_status();
+    let footer = if network_status.is_empty() {
+        "Live testing unverified. F9 opens a world tape from title."
+    } else {
+        &network_status
+    };
+    game.native_text(batch, footer, [8.0, top + 81.0], 0xffb347, false);
 }
 
 pub(super) fn click(game: &Game<'_>, mouse: [f32; 2], button: i32) -> bool {
@@ -342,7 +448,15 @@ pub(super) fn click(game: &Game<'_>, mouse: [f32; 2], button: i32) -> bool {
     let mut session = storage.borrow_mut();
     if (top + 5.0..top + 22.0).contains(&y) && x >= 7.0 {
         match ((x - 7.0) / ((batch.width - 14.0) / 6.0).max(1.0)) as usize {
-            0 => session.toggle_play(),
+            0 => {
+                if let Some(remote) = &game.remote
+                    && remote.session.address.starts_with(network::PREFIX)
+                {
+                    network::toggle_pause(&remote.session);
+                } else {
+                    session.toggle_play();
+                }
+            }
             1 => session.add_camera_key(),
             2 => {
                 if session.editor.undo() {
@@ -360,7 +474,15 @@ pub(super) fn click(game: &Game<'_>, mouse: [f32; 2], button: i32) -> bool {
         }
     } else if (top + 30.0..top + 55.0).contains(&y) && x >= 60.0 {
         let tick = ((x - 60.0) / (batch.width - 70.0).max(1.0)) as f64 * session.duration as f64;
-        session.seek(tick);
+        if game
+            .remote
+            .as_ref()
+            .is_some_and(|r| r.session.address.starts_with(network::PREFIX))
+        {
+            session.requested_seek = Some(tick.max(0.0) as u64);
+        } else {
+            session.seek(tick);
+        }
     }
     true
 }

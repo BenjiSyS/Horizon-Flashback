@@ -9,5 +9,9 @@
   "feature_parity_verified": false,
   "performance_verified": false,
   "native_typecheck_verified": true,
-  "native_typecheck_features": "--no-default-features (audio/controllers disabled)"
+  "native_typecheck_features": "--no-default-features (audio/controllers disabled)",
+  "native_network_session_tests_verified": true,
+  "native_network_session_tests_passed": 6,
+  "live_testing": "Not run; user selected source/build work only",
+  "native_executable_build_verified": true
 }

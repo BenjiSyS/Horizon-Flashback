@@ -39,3 +39,7 @@ cargo run --locked --bin flashback -- seek target/demo.hfr 200
 The demo contains synthetic camera/time data. It is not a Minecraft world recording.
 The native camera/editor prototype and the remaining full-port work are detailed
 in [STATUS.md](docs/STATUS.md).
+
+Experimental world packet recording/playback is described in
+[NETWORK-REPLAY.md](docs/NETWORK-REPLAY.md). It is source/build work with live
+gameplay still unverified; full Flashback parity remains unfinished.

@@ -70,6 +70,26 @@ fn run() -> Result<(), String> {
                 serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?
             );
         }
+        [command, path] if command == "tape-inspect" => {
+            let mut tape = horizon_flashback::tape::TapeReader::new(
+                File::open(path).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+            let mut counts = std::collections::BTreeMap::<u8, u64>::new();
+            let mut last_tick = 0;
+            let mut payload_bytes = 0u64;
+            while let Some(record) = tape.next_record().map_err(|e| e.to_string())? {
+                *counts.entry(record.kind).or_default() += 1;
+                last_tick = record.tick;
+                payload_bytes += record.payload.len() as u64;
+            }
+            let summary = serde_json::json!({"metadata": tape.metadata, "events_by_kind": counts,
+                "last_tick": last_tick, "payload_bytes": payload_bytes, "recovered_incomplete_tail": tape.recovered_tail});
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?
+            );
+        }
         [command, path, tick] if command == "seek" => {
             let tick = tick
                 .parse::<u64>()
@@ -84,7 +104,7 @@ fn run() -> Result<(), String> {
         }
         _ => {
             return Err(
-                "Usage: flashback demo NEW_FILE.hfr | inspect FILE.hfr | seek FILE.hfr TICK".into(),
+                "Usage: flashback demo NEW_FILE.hfr | inspect FILE.hfr | seek FILE.hfr TICK | tape-inspect FILE.hfnet".into(),
             );
         }
     }

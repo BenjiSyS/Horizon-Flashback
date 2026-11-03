@@ -17,7 +17,10 @@
 `py -3.12 -I tools/native.py plan`
 `py -3.12 -I tools/native.py check`
 `py -3.12 -I tools/native.py build`
+`py -3.12 -I tools/native.py test-net`
+`py -3.12 -I tools/native.py verify`
 Requires the exact source checkouts from compatibility.json. `check` uses no optional audio/controller features.
+`test-net` uses real Horizon Session code and synthetic protocol fixtures without game resources.
 
 ## Native Rust formatting
 `rustfmt --edition 2024 --check @(Get-ChildItem native -Filter '*.rs' | ForEach-Object FullName)`

@@ -83,7 +83,7 @@ def source(horizon):
 
 def main():
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("action", choices=["stage", "plan", "apply", "check", "build"])
+    parser.add_argument("action", choices=["stage", "plan", "apply", "check", "build", "test-net", "verify"])
     parser.add_argument("--horizon", type=Path, default=ROOT / ".upstream" / "horizon")
     parser.add_argument("--mixins", type=Path, default=ROOT / ".upstream" / "mixins")
     args = parser.parse_args()
@@ -93,6 +93,7 @@ def main():
         return
     if revision(args.mixins) != PINS["horizon_mixins_revision"]:
         raise ValueError("horizon-mixins checkout does not match compatibility.json")
+    run(["git", "-C", args.mixins, "diff", "--quiet", "HEAD", "--", "Cargo.toml", "Cargo.lock", "crates"])
     workspace = source(args.horizon)
     run(["cargo", "build", "--locked", "--manifest-path", args.mixins / "Cargo.toml", "-p", "horizon-mixins-cli"])
     cli = args.mixins / "target" / "debug" / ("horizon-mixins.exe" if os.name == "nt" else "horizon-mixins")
@@ -107,8 +108,12 @@ def main():
     # immutable bundle revision therefore gets a fresh output path.
     output = ROOT / "target" / (f"native-plan-{signature}.json" if action == "plan" else f"native-stages/{signature}")
     run([cli, action, "--workspace", workspace, "--mods", mods, "--out", output])
-    if args.action in ("check", "build"):
-        run(["cargo", args.action, "--locked", "--target-dir", ROOT / "target" / "native-game" / "target", "-p", "horizon-client", "--no-default-features"], cwd=output)
+    if args.action in ("check", "build", "verify"):
+        run(["cargo", "check" if args.action == "verify" else args.action, "--locked", "--target-dir", ROOT / "target" / "native-game" / "target", "-p", "horizon-client", "--no-default-features"], cwd=output)
+    if args.action in ("test-net", "verify"):
+        run(["cargo", "test", "--locked", "--target-dir", ROOT / "target" / "native-game" / "target", "-p", "horizon-client-lib", "--no-default-features", "--lib", "net::flashback_net::tests", "--", "--test-threads=1"], cwd=output)
+    if args.action == "verify":
+        run(["cargo", "clippy", "--locked", "--target-dir", ROOT / "target" / "native-game" / "target", "-p", "horizon-client-lib", "--no-default-features", "--lib", "--", "-D", "warnings"], cwd=output)
     evidence = {
         "action": args.action, "horizon": PINS["horizon_revision"],
         "mixins": PINS["horizon_mixins_revision"],

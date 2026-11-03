@@ -17,3 +17,36 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -I tests/test_native_tools.py
+  native-protocol:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact native source pins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $pins = Get-Content compatibility.json -Raw | ConvertFrom-Json
+          if ($pins.horizon_revision -notmatch '^[0-9a-f]{40}$' -or $pins.horizon_mixins_revision -notmatch '^[0-9a-f]{40}$') {
+            throw 'Native revisions must be exact commit hashes'
+          }
+          New-Item -ItemType Directory -Force .upstream/horizon, .upstream/mixins | Out-Null
+          git -C .upstream/horizon init
+          git -C .upstream/horizon remote add origin https://github.com/horizon-rust/horizon.git
+          git -C .upstream/horizon fetch --depth 1 origin $pins.horizon_revision
+          git -C .upstream/horizon checkout --detach FETCH_HEAD
+          git -C .upstream/mixins init
+          git -C .upstream/mixins remote add origin https://github.com/horizon-rust/horizon-mixins.git
+          git -C .upstream/mixins fetch --depth 1 origin $pins.horizon_mixins_revision
+          git -C .upstream/mixins checkout --detach FETCH_HEAD
+      - name: Typecheck, native Session tests, and native library Clippy
+        run: python -I tools/native.py verify

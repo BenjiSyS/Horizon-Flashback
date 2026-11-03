@@ -9,6 +9,43 @@ horizon_revision = "d91353641866b85d851926da3b1a9fdee46392f1"
 [[crate]]
 id = "engine"
 path = "engine"
+dependent = "horizon-client-lib"
+
+[[module]]
+id = "network"
+file = "crates/horizon-client/src/net.rs"
+name = "flashback_net"
+source = "network.rs"
+visibility = "pub"
+
+[[injection]]
+id = "network-run"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_lib::net::run"
+helper = "network_run.rs"
+bindings = [{name = "address", ty = "&str", value = "address"}, {name = "writer", ty = "&Mutex<Option<ConnWriter>>", value = "shared_writer"}, {name = "send", ty = "&Sender<Event>", value = "send"}]
+
+[[injection]]
+id = "network-poll"
+kind = "RETURN"
+target = "horizon_client_lib::net::Session::poll"
+helper = "network_poll.rs"
+bindings = [{name = "value", ty = "Vec<Event>", value = "$value"}, {name = "session", ty = "&Session", value = "self"}]
+
+[[injection]]
+id = "network-close"
+kind = "HEAD"
+target = "horizon_client_lib::net::Session::disconnect"
+helper = "network_close.rs"
+bindings = [{name = "session", ty = "&mut Session", value = "self"}]
+
+[[injection]]
+id = "network-backlog"
+kind = "HEAD"
+target = "horizon_client::game::remote::Game<'_>::poll_remote"
+helper = "network_backlog.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
 
 [[module]]
 id = "runtime"

@@ -8,7 +8,9 @@ Rust 2024, Cargo, serde. Horizon native Rust source integration.
 
 ## IMPORTANT DIRECTORIES
 - `src/`: testable engine.
+- `src/tape.rs`: bounded streaming protocol-event tapes, independent of Horizon.
 - `native/`: host-specific integration when implemented.
+- `native/network.rs`: opt-in capture, socketless Session transport and native tests.
 - `.upstream/`: ignored reference clones; never publish.
 - `docs/`: compatibility and feature evidence.
 
