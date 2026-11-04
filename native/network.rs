@@ -1,5 +1,6 @@
 // Source-level packet capture and offline replay. No socket is created on replay.
 use super::{Event, Reason, Session};
+pub use engine::actor::LocalPlayerFrame;
 use engine::tape::{PacketRecord, TapeMeta, TapeReader, TapeWriter};
 pub use horizon_flashback as engine;
 use horizon_protocol::{
@@ -27,6 +28,8 @@ const BRAND: u8 = 4;
 const RECONFIGURING: u8 = 5;
 const RECONFIGURED: u8 = 6;
 const REGISTRY: u8 = 7;
+const LOCAL_PLAYER: u8 = 8;
+pub const PLAYER_CHANNEL: &str = "flashback:local_player";
 const MAX_QUEUED: usize = 64;
 const MAX_QUEUED_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REGISTRY_BYTES: usize = 64 * 1024 * 1024;
@@ -249,6 +252,7 @@ struct Clock {
     pending: VecDeque<usize>,
     pending_bytes: usize,
     duration: Option<u64>,
+    player: Option<LocalPlayerFrame>,
 }
 impl Clock {
     fn update(&mut self) {
@@ -267,6 +271,39 @@ fn control(session: &Session) -> Option<Arc<Control>> {
     lock(controls())
         .get(&session_key(session))
         .and_then(Weak::upgrade)
+}
+pub fn local_player(session: &Session) -> Option<LocalPlayerFrame> {
+    lock(&control(session)?.clock).player.clone()
+}
+pub fn clear_local_player(session: &Session) {
+    if let Some(control) = control(session) {
+        lock(&control.clock).player = None;
+    }
+}
+/// Called only when the game consumes the internally generated replay event.
+pub fn apply_local_player(session: &Session, bytes: &[u8]) -> Result<(), String> {
+    let control = control(session).ok_or("Local player event outside replay")?;
+    let frame = LocalPlayerFrame::decode(bytes)?;
+    lock(&control.clock).player = Some(frame);
+    Ok(())
+}
+pub fn record_local_player(session: &Session, frame: &LocalPlayerFrame) {
+    let mut captures = lock(captures());
+    let identity = session_key(session);
+    let Some(capture) = captures.get_mut(&identity) else {
+        return;
+    };
+    let result = frame.validate().map_err(io::Error::other).and_then(|()| {
+        capture.record(
+            LOCAL_PLAYER,
+            serde_json::to_vec(frame).map_err(io::Error::other)?,
+        )
+    });
+    if let Err(error) = result {
+        captures.remove(&identity);
+        lock(arm_state()).status =
+            format!("World recording stopped after player sample failure: {error}");
+    }
 }
 pub fn progress(session: &Session) -> Option<Progress> {
     let control = control(session)?;
@@ -448,6 +485,7 @@ fn play_file(path: &Path, seek: u64, identity: usize, send: &Sender<Event>) -> i
             pending: VecDeque::new(),
             pending_bytes: 0,
             duration: None,
+            player: None,
         }),
         changed: Condvar::new(),
     });
@@ -496,6 +534,18 @@ fn play_file(path: &Path, seek: u64, identity: usize, send: &Sender<Event>) -> i
         last_tick = record.tick;
         let mut cost = record.payload.len();
         let event = match record.kind {
+            LOCAL_PLAYER => {
+                if !joined {
+                    return Err(io::Error::other("Local player sample before replay join"));
+                }
+                LocalPlayerFrame::decode(&record.payload).map_err(io::Error::other)?;
+                Event::Packet(Box::new(play::Clientbound::CustomPayload(
+                    cfg::CustomPayload {
+                        channel: PLAYER_CHANNEL.into(),
+                        data: record.payload,
+                    },
+                )))
+            }
             REGISTRY => {
                 registry_bytes = registry_bytes.saturating_add(record.payload.len());
                 if registry_bytes > MAX_REGISTRY_BYTES {
@@ -610,6 +660,18 @@ mod tests {
         }
     }
     fn create(records: &[(u64, play::Clientbound)]) -> TempTape {
+        create_raw(
+            &records
+                .iter()
+                .map(|(tick, packet)| PacketRecord {
+                    tick: *tick,
+                    kind: PACKET,
+                    payload: packet.encode(),
+                })
+                .collect::<Vec<_>>(),
+        )
+    }
+    fn create_raw(records: &[PacketRecord]) -> TempTape {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -638,15 +700,8 @@ mod tests {
             }],
         });
         record_registries(&mut capture, &registries, JOIN, 42, "ReplayTest").unwrap();
-        for (tick, packet) in records {
-            capture
-                .writer
-                .append(&PacketRecord {
-                    tick: *tick,
-                    kind: PACKET,
-                    payload: packet.encode(),
-                })
-                .unwrap();
+        for record in records {
+            capture.writer.append(record).unwrap();
         }
         capture.writer.flush().unwrap();
         drop(capture);
@@ -715,6 +770,78 @@ mod tests {
         ));
         assert!(lock(&session.writer).is_none());
         close(session);
+    }
+    #[test]
+    fn local_player_samples_follow_packet_order_and_require_validation() {
+        let frame = LocalPlayerFrame {
+            position: [2.5, 65.0, -3.0],
+            previous_position: [2.4, 65.2, -3.0],
+            velocity: [0.1, -0.2, 0.0],
+            yaw: 90.0,
+            pitch: 30.0,
+            head_yaw: 80.0,
+            on_ground: false,
+            sprinting: true,
+            crouching: false,
+            swimming: false,
+            flying: false,
+            fall_flying: true,
+            selected: 3,
+        };
+        let tape = create_raw(&[
+            PacketRecord {
+                tick: 0,
+                kind: PACKET,
+                payload: block(0).encode(),
+            },
+            PacketRecord {
+                tick: 1,
+                kind: LOCAL_PLAYER,
+                payload: serde_json::to_vec(&frame).unwrap(),
+            },
+            PacketRecord {
+                tick: 2,
+                kind: PACKET,
+                payload: block(2).encode(),
+            },
+        ]);
+        let session = connect(&tape, 2);
+        let events = collect(&session, 4);
+        assert!(
+            local_player(&session).is_none(),
+            "Reader must not apply ahead of game consumption"
+        );
+        assert!(
+            matches!(&events[1], Event::Packet(p) if matches!(&**p, play::Clientbound::BlockUpdate(_)))
+        );
+        let Event::Packet(packet) = &events[2] else {
+            panic!("Missing player sample")
+        };
+        let play::Clientbound::CustomPayload(payload) = &**packet else {
+            panic!("Missing internal event")
+        };
+        assert_eq!(payload.channel, PLAYER_CHANNEL);
+        assert!(
+            !allowed_packet(packet),
+            "Live packets cannot inject internal player events"
+        );
+        apply_local_player(&session, &payload.data).unwrap();
+        assert_eq!(local_player(&session), Some(frame));
+        assert!(apply_local_player(&session, b"{}").is_err());
+        clear_local_player(&session);
+        assert!(local_player(&session).is_none());
+        close(session);
+
+        let tape = create_raw(&[PacketRecord {
+            tick: 0,
+            kind: LOCAL_PLAYER,
+            payload: b"{}".to_vec(),
+        }]);
+        let session = connect(&tape, 0);
+        let events = collect(&session, 2);
+        assert!(events.iter().any(
+            |e| matches!(e, Event::Disconnected {reason,..} if reason.contains("Replay failed"))
+        ));
     }
     #[test]
     fn seek_reconstructs_prefix_then_waits_paused_and_can_resume() {

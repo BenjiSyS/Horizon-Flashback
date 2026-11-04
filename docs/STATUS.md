@@ -12,6 +12,8 @@ validation are separate gates.
 | Recording controls | Start/pause/resume/stop core; native camera start/stop | Core lifecycle tests; native runtime not tested |
 | Native capture | Camera position, yaw, pitch and FOV | Native adapter typechecks; live behavior not tested |
 | Native world capture | Opt-in capture from the next connection: registries, feature flags, brand, play packets, reconfiguration | Source implementation and codec tests; real recording NOT TESTED |
+| Local-player samples | Position, velocity, rotation, movement flags and selected slot on the packet tape clock | Core validation and native transport tests; independent actor, equipment and animation incomplete |
+| Replay input/pause | Queued interaction input suppressed; paused client-level tick skipped while editor hooks remain available | Host-double tests and native typecheck; all animations and deterministic stepping unfinished |
 | Offline world playback | Socketless Session transport, timed packet delivery, pause/speed, prefix replay for seeking | Native Session tests; rendered scenes NOT TESTED |
 | Camera timeline | Step, linear, Catmull-Rom positions, shortest-angle rotations | Core tests |
 | FOV/speed/time tracks | Core sampling and serialization | Core tests; incomplete native/editor exposure |
@@ -92,7 +94,7 @@ been tested in a live game. The standalone CLI can inspect container integrity:
 
 ## Remaining integration work
 
-1. Complete local-player recording/reconstruction, resource/mod identity checks,
+1. Complete local-player actor/equipment/animation reconstruction, resource/mod identity checks,
    custom payload handling and indexed world snapshots for fast seeking.
 2. Validate restoration of real chunks, entities, dimensions, clocks and caches;
    implement true paused/stepped client simulation and deterministic rendering.

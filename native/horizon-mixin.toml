@@ -53,6 +53,44 @@ file = "crates/horizon-client/src/game.rs"
 name = "flashback_native"
 source = "runtime.rs"
 
+[[module]]
+id = "player"
+file = "crates/horizon-client/src/game.rs"
+name = "flashback_player"
+source = "player.rs"
+
+[[injection]]
+id = "player-tick"
+kind = "HEAD"
+hook = "tick"
+hook_version = 1
+helper = "player_tick.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
+[[injection]]
+id = "player-packet"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::handle_packet"
+helper = "player_packet.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}, {name = "packet", ty = "&C", value = "&packet"}]
+
+[[injection]]
+id = "replay-input"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::remote_handle_input"
+helper = "replay_input.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
+[[injection]]
+id = "replay-pause"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::remote::Game<'_>::tick_remote_level"
+helper = "replay_pause.rs"
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+
 [[injection]]
 id = "unload"
 kind = "HEAD"

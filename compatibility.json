@@ -11,7 +11,8 @@
   "native_typecheck_verified": true,
   "native_typecheck_features": "--no-default-features (audio/controllers disabled)",
   "native_network_session_tests_verified": true,
-  "native_network_session_tests_passed": 6,
+  "native_network_session_tests_passed": 7,
   "live_testing": "Not run; user selected source/build work only",
-  "native_executable_build_verified": true
+  "native_executable_build_verified": true,
+  "native_executable_build_features": "default (audio, controllers)"
 }

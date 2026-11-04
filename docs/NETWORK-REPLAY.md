@@ -23,6 +23,16 @@ links/dialogs and arbitrary mod control payloads are excluded. Only the recogniz
 attachment-sync custom payload is retained. Original gameplay still receives the
 unchanged events: these exclusions apply to the recording, not the live session.
 
+Post-tick local-player samples share the packet tape's clock. They contain position
+and its previous interpolation endpoint, velocity, body/head rotation, movement
+flags and selected hotbar slot. These are
+typed kind-8 records, not trusted arbitrary custom payloads. Samples reject
+nonfinite numbers, invalid pitch/slots, unknown fields and payloads over 4 KiB.
+The reader converts them to a reserved internal event in packet order. Only an
+active replay Session can accept that event; live server payloads cannot use it.
+The game applies samples after its predicted movement tick. This is an initial
+pose restoration path, not a complete independent recorded player actor.
+
 Tapes are created with `create_new` in `config/flashback/world-*.hfnet`. Recording
 flushes periodically and when stopped/disconnected. A write error stops capture
 and is reported in recording status. Existing files are not overwritten.
@@ -62,10 +72,16 @@ Seeking reconnects to a fresh replay session and replays the prefix from the
 beginning. It does not seek by changing a live connection's state. There is no
 indexed world-snapshot acceleration yet, so long seeks can be slow.
 
+Replay suppresses queued gameplay input. Pausing or reaching EOF skips the
+client-level tick while the outer client tick still services native editor controls.
+This does not yet freeze every animation: the outer rocket tick and render-driven
+effects still need coordinated simulation control. Live pause behavior is unverified.
+
 ## Important remaining work
 
-- Incoming-packet capture does not yet reconstruct the local player's predicted
-  movement, inventory actions, model, voice or audio as a separate recorded actor.
+- Local-player samples restore selected pose/movement fields. Inventory prediction,
+  equipment, full animation, riding, model, voice and audio still need a separate
+  recorded actor. Render-clock alignment and prediction side effects remain unfinished.
 - Timestamping follows observed packet arrival at 20 ticks/second. Pausing the
   packet producer does not yet freeze all client animations/simulation. Full
   deterministic stepping and media export remain unimplemented.
@@ -81,7 +97,7 @@ indexed world-snapshot acceleration yet, so long seeks can be slow.
 - UI layout/shortcuts and full feature parity are unfinished. No performance
   advantage over Flashback has been measured.
 
-The native tests use the real `Session::connect` entry point, synthetic registry
-and block-update packets, and temporary tapes. They test fail-closed routing,
-pause/seek, queue limits, forbidden payloads, and cancellation. They never launch
-a game or access real player worlds/resources.
+The native tests use the real `Session::connect` entry point, synthetic registry,
+block-update and local-player records, and temporary tapes. They test fail-closed
+routing, pause/seek, queue limits, ordered player delivery, forbidden payloads, and
+cancellation. They never launch a game or access real player worlds/resources.
