@@ -26,7 +26,7 @@ fn supported(game: &Game<'_>) -> bool {
         && !game.options.split_in_main_window
         && !game.split_window
 }
-fn state(game: &Game<'_>) -> Rc<RefCell<Session>> {
+pub(super) fn state(game: &Game<'_>) -> Rc<RefCell<Session>> {
     let Some(window) = game.window.as_ref() else {
         return Rc::new(RefCell::new(Session::default()));
     };
@@ -250,6 +250,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str) {
 pub(super) fn camera(
     game: &mut Game<'_>,
     original: Option<(glam::DVec3, f32, f32)>,
+    partial: f32,
 ) -> Option<(glam::DVec3, f32, f32)> {
     if !supported(game) {
         return original;
@@ -261,8 +262,35 @@ pub(super) fn camera(
         session.preview = false;
         session.playing = false;
     }
+    let partial = if partial.is_finite() {
+        partial.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let render_tick = game
+        .remote
+        .as_ref()
+        .and_then(|r| network::progress(&r.session))
+        .map_or_else(
+            || {
+                session.playhead
+                    + if session.playing {
+                        f64::from(partial)
+                            * session.speed
+                            * session
+                                .editor
+                                .timeline
+                                .speed_at(session.playhead)
+                                .unwrap_or(1.0)
+                    } else {
+                        0.0
+                    }
+            },
+            |p| p.tick,
+        );
+    session.render_tick = Some(render_tick);
     session
-        .camera()
+        .camera_at(render_tick, |id| game.flashback_target_pose(id, partial))
         .map(|pose| {
             (
                 glam::DVec3::new(pose.position.x, pose.position.y, pose.position.z),
@@ -290,8 +318,13 @@ pub(super) fn fov(game: &Game<'_>, position: [f64; 3], degrees: &mut f32) {
         roll: 0.0,
         fov: (*degrees).into(),
     });
-    if let Some(camera) = session.camera() {
-        *degrees = camera.fov as f32;
+    if session.preview {
+        let tick = session.render_tick.unwrap_or(session.playhead);
+        if let Some(fov) = session.editor.timeline.fov_at(tick) {
+            *degrees = fov as f32;
+        } else if let Some(camera) = session.camera_at(tick, |_| None) {
+            *degrees = camera.fov as f32;
+        }
     }
 }
 

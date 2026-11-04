@@ -29,6 +29,11 @@ def bundle():
     inputs["engine/Cargo.toml"] = (ROOT / "Cargo.toml").read_bytes()
     for path in (ROOT / "src").glob("*.rs"):
         inputs[f"engine/src/{path.name}"] = path.read_bytes()
+    # Numeric oracle data is required by the engine's unit tests. This is one
+    # explicit fixture, not an open-ended assets/recordings directory copy.
+    fixture = ROOT / "tests/fixtures/interpolation-java.json"
+    if fixture.exists():
+        inputs["engine/tests/fixtures/interpolation-java.json"] = fixture.read_bytes()
     signature = hashlib.sha256()
     for name, data in sorted(inputs.items()):
         signature.update(name.encode() + b"\0" + len(data).to_bytes(8, "little") + data)

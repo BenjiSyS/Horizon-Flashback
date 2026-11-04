@@ -25,6 +25,7 @@ pub struct Session {
     pub playing: bool,
     pub preview: bool,
     pub playhead: f64,
+    pub render_tick: Option<f64>,
     pub duration: u64,
     pub speed: f64,
     pub status: String,
@@ -46,6 +47,7 @@ impl Default for Session {
             playing: false,
             preview: false,
             playhead: 0.0,
+            render_tick: None,
             duration: 0,
             speed: 1.0,
             status: "Camera preview prototype".into(),
@@ -63,7 +65,11 @@ impl Default for Session {
 impl Session {
     /// Starting a new take must be explicit. Returns false if one already exists.
     pub fn start(&mut self, dimension: &str) -> bool {
-        if self.recording || self.replay.is_some() || !self.editor.timeline.camera.is_empty() {
+        if self.recording
+            || self.replay.is_some()
+            || self.editor.timeline.max_tick().is_some()
+            || !self.saved
+        {
             self.status = "Save this take before starting a new session".into();
             return false;
         }
@@ -74,7 +80,7 @@ impl Session {
         self.playing = false;
         self.capture_tick = 0;
         self.pending_sample = true;
-        self.status = "Recording camera; world replay not implemented".into();
+        self.status = "Recording camera take".into();
         true
     }
 
@@ -98,6 +104,7 @@ impl Session {
     }
 
     pub fn tick(&mut self, elapsed_seconds: f64, dimension: Option<&str>) {
+        self.render_tick = None;
         if self.recording {
             if dimension != Some(self.dimension.as_str()) {
                 self.stop();
@@ -191,6 +198,7 @@ impl Session {
 
     pub fn seek(&mut self, tick: f64) {
         if tick.is_finite() {
+            self.render_tick = None;
             self.playhead = tick.clamp(0.0, self.duration as f64);
             self.playing = false;
             self.preview = true;
@@ -199,10 +207,26 @@ impl Session {
 
     /// The cinematic track takes priority over the captured camera path.
     pub fn camera(&self) -> Option<CameraPose> {
+        self.camera_with_targets(|_| None)
+    }
+    pub fn camera_with_targets(
+        &self,
+        resolve: impl FnMut(crate::cinematic::EntityId) -> Option<crate::cinematic::TargetPose>,
+    ) -> Option<CameraPose> {
+        self.camera_at(self.playhead, resolve)
+    }
+    pub fn camera_at(
+        &self,
+        tick: f64,
+        resolve: impl FnMut(crate::cinematic::EntityId) -> Option<crate::cinematic::TargetPose>,
+    ) -> Option<CameraPose> {
+        if !tick.is_finite() || tick < 0.0 {
+            return None;
+        }
         if !self.preview {
             return None;
         }
-        if let Some(key) = self.editor.timeline.camera_at(self.playhead) {
+        if let Some(key) = self.editor.timeline.camera_at_with_targets(tick, resolve) {
             return Some(CameraPose {
                 position: crate::replay::Vec3 {
                     x: key.position.x,
@@ -212,14 +236,14 @@ impl Session {
                 yaw: key.yaw,
                 pitch: key.pitch,
                 roll: key.roll,
-                fov: self.editor.timeline.fov_at(self.playhead).unwrap_or(70.0),
+                fov: self.editor.timeline.fov_at(tick).unwrap_or(70.0),
             });
         }
         let replay = self.replay.as_ref()?;
-        let tick = self.playhead.floor() as u64;
-        let a = replay.state_at(tick).ok()?.camera;
-        let b = replay.state_at(tick.saturating_add(1)).ok()?.camera;
-        let t = self.playhead.fract();
+        let whole = tick.floor() as u64;
+        let a = replay.state_at(whole).ok()?.camera;
+        let b = replay.state_at(whole.saturating_add(1)).ok()?.camera;
+        let t = tick.fract();
         let linear = |a: f64, b: f64| a + (b - a) * t;
         let angle = |a: f64, b: f64| a + ((b - a + 180.0).rem_euclid(360.0) - 180.0) * t;
         Some(CameraPose {
@@ -231,7 +255,11 @@ impl Session {
             yaw: angle(a.yaw, b.yaw),
             pitch: linear(a.pitch, b.pitch),
             roll: angle(a.roll, b.roll),
-            fov: linear(a.fov, b.fov),
+            fov: self
+                .editor
+                .timeline
+                .fov_at(tick)
+                .unwrap_or_else(|| linear(a.fov, b.fov)),
         })
     }
 
@@ -271,7 +299,7 @@ impl Session {
             .validate()
             .map_err(|e| format!("{e:?}"))?;
         let data = Project {
-            version: 1,
+            version: 2,
             duration: self.duration,
             timeline: self.editor.timeline.clone(),
         };
@@ -282,6 +310,9 @@ impl Session {
         if self.recording {
             return Err("Stop recording before loading a project".into());
         }
+        if !self.saved {
+            return Err("Save the current take before loading a project".into());
+        }
         let mut bytes = Vec::new();
         reader
             .take(MAX_PROJECT_BYTES + 1)
@@ -291,22 +322,22 @@ impl Session {
             return Err("Project exceeds 16 MiB".into());
         }
         let project: Project = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        if project.version != 1 {
+        if !matches!(project.version, 1 | 2) {
             return Err("Unsupported project version".into());
         }
         project.timeline.validate().map_err(|e| format!("{e:?}"))?;
         if project
             .timeline
-            .camera
-            .iter()
-            .any(|key| key.tick > project.duration)
+            .max_tick()
+            .is_some_and(|tick| tick > project.duration)
         {
-            return Err("Camera keyframe exceeds project duration".into());
+            return Err("Keyframe exceeds project duration".into());
         }
         self.editor = Editor::new(project.timeline);
         self.duration = project.duration;
         self.replay = None;
         self.playhead = 0.0;
+        self.render_tick = None;
         self.playing = false;
         self.preview = false;
         self.saved = true;

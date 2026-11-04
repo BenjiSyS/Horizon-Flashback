@@ -1,0 +1,201 @@
+{
+  "smooth": [
+    {
+      "amount": 0.0,
+      "scalar": 20.0,
+      "angle": 5.0,
+      "position": [
+        2.0,
+        4.0,
+        -1.0
+      ]
+    },
+    {
+      "amount": 0.125,
+      "scalar": 29.506104,
+      "angle": 12.232092,
+      "position": [
+        3.4182110557719456,
+        5.642444933557399,
+        -0.9995526273272692
+      ]
+    },
+    {
+      "amount": 0.25,
+      "scalar": 42.02539,
+      "angle": 17.317715,
+      "position": [
+        4.873339140624084,
+        6.058669086043524,
+        -0.2743346641339466
+      ]
+    },
+    {
+      "amount": 0.5,
+      "scalar": 70.359375,
+      "angle": 23.352726,
+      "position": [
+        7.724391736110297,
+        4.654928076483133,
+        2.5434733541031584
+      ]
+    },
+    {
+      "amount": 0.75,
+      "scalar": 93.51367,
+      "angle": 27.711374,
+      "position": [
+        10.213248463541362,
+        2.6737230286811755,
+        5.8395446952886845
+      ]
+    },
+    {
+      "amount": 0.875,
+      "scalar": 99.55835,
+      "angle": 30.701544,
+      "position": [
+        11.215631713324562,
+        2.368117133365343,
+        7.162591812167532
+      ]
+    },
+    {
+      "amount": 1.0,
+      "scalar": 100.0,
+      "angle": 35.0,
+      "position": [
+        12.0,
+        3.0,
+        8.0
+      ]
+    }
+  ],
+  "easing": [
+    {
+      "left": "LINEAR",
+      "right": "LINEAR",
+      "values": [
+        0.0,
+        0.125,
+        0.25,
+        0.5,
+        0.75,
+        0.875,
+        1.0
+      ]
+    },
+    {
+      "left": "EASE",
+      "right": "LINEAR",
+      "values": [
+        0.0,
+        0.001953125,
+        0.015625,
+        0.125,
+        0.421875,
+        0.6699219,
+        1.0
+      ]
+    },
+    {
+      "left": "LINEAR",
+      "right": "EASE",
+      "values": [
+        0.0,
+        0.33007812,
+        0.578125,
+        0.875,
+        0.984375,
+        0.9980469,
+        1.0
+      ]
+    },
+    {
+      "left": "EASE",
+      "right": "EASE",
+      "values": [
+        0.0,
+        0.0078125,
+        0.0625,
+        0.5,
+        0.9375,
+        0.9921875,
+        1.0
+      ]
+    },
+    {
+      "left": "HOLD",
+      "right": "LINEAR",
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "left": "SMOOTH",
+      "right": "EASE",
+      "values": [
+        0.0,
+        0.0078125,
+        0.0625,
+        0.5,
+        0.9375,
+        0.9921875,
+        1.0
+      ]
+    },
+    {
+      "left": "HERMITE",
+      "right": "LINEAR",
+      "values": [
+        0.0,
+        0.125,
+        0.25,
+        0.5,
+        0.75,
+        0.875,
+        1.0
+      ]
+    },
+    {
+      "left": "LINEAR",
+      "right": "HOLD",
+      "values": [
+        0.0,
+        0.125,
+        0.25,
+        0.5,
+        0.75,
+        0.875,
+        1.0
+      ]
+    },
+    {
+      "left": "SMOOTH",
+      "right": "HERMITE",
+      "values": [
+        0.0,
+        0.125,
+        0.25,
+        0.5,
+        0.75,
+        0.875,
+        1.0
+      ]
+    }
+  ],
+  "reference": {
+    "revision": "bf046b763ddf466bdc1b6d9c6cc7ba06e527f3e2",
+    "files": {
+      "com/moulberry/flashback/spline/CatmullRom.java": "beb0c7ec0553f9320be1c4f1a690389a7d65d91ccb65e8981ac7bc862a728b84",
+      "com/moulberry/flashback/keyframe/interpolation/SidedInterpolationType.java": "11118cb91702249787cfebbba5cbb6b864e3f6d5668f6f01001064ea664fa961"
+    },
+    "scope": "Original CatmullRom and sided-easing code with minimal arithmetic/vector dependency stubs"
+  }
+}

@@ -16,9 +16,20 @@ pub struct CameraKey {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Interpolation {
+    #[serde(alias = "HOLD", alias = "hold")]
     Step,
+    #[serde(alias = "LINEAR", alias = "linear")]
     Linear,
+    #[serde(alias = "SMOOTH", alias = "smooth")]
     Smooth,
+    #[serde(alias = "EASE_IN", alias = "ease_in")]
+    EaseIn,
+    #[serde(alias = "EASE_OUT", alias = "ease_out")]
+    EaseOut,
+    #[serde(alias = "EASE_IN_OUT", alias = "ease_in_out")]
+    EaseInOut,
+    #[serde(alias = "HERMITE", alias = "hermite")]
+    Hermite,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Key<T> {
@@ -27,12 +38,15 @@ pub struct Key<T> {
     pub interpolation: Interpolation,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Timeline {
     pub camera: Vec<Key<CameraKey>>,
     pub fov: Vec<Key<f64>>,
     pub speed: Vec<Key<f64>>,
     pub time_of_day: Vec<Key<f64>>,
     pub markers: Vec<String>,
+    #[serde(default)]
+    pub tracks: Vec<crate::cinematic::Track>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimelineError {
@@ -43,7 +57,7 @@ pub enum TimelineError {
     InvalidOperation,
     Serialization(String),
 }
-fn valid<T>(keys: &[Key<T>]) -> Result<(), TimelineError> {
+pub(crate) fn valid<T>(keys: &[Key<T>]) -> Result<(), TimelineError> {
     let mut last = None;
     for k in keys {
         if last.is_some_and(|v| v >= k.tick) {
@@ -59,6 +73,13 @@ fn valid<T>(keys: &[Key<T>]) -> Result<(), TimelineError> {
 }
 impl Timeline {
     pub fn validate(&self) -> Result<(), TimelineError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for track in &self.tracks {
+            if !ids.insert(track.id) {
+                return Err(TimelineError::InvalidOperation);
+            }
+            track.data.validate()?;
+        }
         valid(&self.camera)?;
         valid(&self.fov)?;
         valid(&self.speed)?;
@@ -131,16 +152,100 @@ impl Timeline {
         Ok(())
     }
     pub fn camera_at(&self, t: f64) -> Option<CameraKey> {
-        sample_camera(&self.camera, t)
+        self.camera_at_with_targets(t, |_| None)
+    }
+    pub fn camera_at_with_targets(
+        &self,
+        t: f64,
+        mut resolve: impl FnMut(crate::cinematic::EntityId) -> Option<crate::cinematic::TargetPose>,
+    ) -> Option<CameraKey> {
+        use crate::cinematic::{TrackKind, TrackSample};
+        let mut camera = sample_camera(&self.camera, t);
+        let mut seen = 0u16;
+        for track in &self.tracks {
+            let kind = track.data.kind();
+            if !matches!(
+                kind,
+                TrackKind::Camera | TrackKind::Orbit | TrackKind::Tracking
+            ) {
+                continue;
+            }
+            let bit = 1u16 << (kind as u8);
+            if seen & bit != 0 {
+                continue;
+            }
+            let Some(change) = track.sample(t, false) else {
+                continue;
+            };
+            seen |= bit;
+            match change {
+                TrackSample::Camera(k) => camera = Some(k),
+                TrackSample::Orbit(k) => camera = Some(k.camera()),
+                TrackSample::Tracking(k) => {
+                    if let Some(pose) = resolve(k.target) {
+                        camera = Some(k.camera(pose));
+                    }
+                }
+                _ => {}
+            }
+        }
+        camera
+    }
+    pub fn changes_at(&self, t: f64) -> impl Iterator<Item = crate::cinematic::TrackSample> + '_ {
+        use crate::cinematic::TrackKind;
+        let mut seen = 0u16;
+        self.tracks.iter().filter_map(move |track| {
+            let kind = match track.data.kind() {
+                TrackKind::Timelapse => TrackKind::Speed,
+                k => k,
+            };
+            if kind == TrackKind::BlockOverride {
+                return None;
+            }
+            let bit = 1u16 << (kind as u8);
+            if seen & bit != 0 && kind != TrackKind::Audio {
+                return None;
+            }
+            let change = track.sample(t, false)?;
+            seen |= bit;
+            Some(change)
+        })
+    }
+    fn track_scalar(&self, t: f64, kind: crate::cinematic::TrackKind) -> Option<f64> {
+        use crate::cinematic::{TrackKind, TrackSample};
+        self.tracks
+            .iter()
+            .filter(|track| {
+                track.data.kind() == kind
+                    || (kind == TrackKind::Speed && track.data.kind() == TrackKind::Timelapse)
+            })
+            .find_map(|track| match track.sample(t, false)? {
+                TrackSample::Fov(v) | TrackSample::Speed(v) | TrackSample::TimeOfDay(v) => Some(v),
+                _ => None,
+            })
+    }
+    pub fn max_tick(&self) -> Option<u64> {
+        self.camera
+            .last()
+            .map(|k| k.tick)
+            .into_iter()
+            .chain(self.fov.last().map(|k| k.tick))
+            .chain(self.speed.last().map(|k| k.tick))
+            .chain(self.time_of_day.last().map(|k| k.tick))
+            .chain(self.tracks.iter().filter_map(|t| t.data.last_tick()))
+            .max()
     }
     pub fn fov_at(&self, t: f64) -> Option<f64> {
-        sample_scalar(&self.fov, t, false)
+        self.track_scalar(t, crate::cinematic::TrackKind::Fov)
+            .or_else(|| sample_scalar(&self.fov, t, true))
     }
     pub fn speed_at(&self, t: f64) -> Option<f64> {
-        sample_scalar(&self.speed, t, false)
+        self.track_scalar(t, crate::cinematic::TrackKind::Speed)
+            .or_else(|| sample_scalar(&self.speed, t, false))
     }
     pub fn time_of_day_at(&self, t: f64) -> Option<f64> {
-        sample_scalar(&self.time_of_day, t, true)
+        self.track_scalar(t, crate::cinematic::TrackKind::TimeOfDay)
+            .or_else(|| sample_scalar(&self.time_of_day, t, false).map(f64::trunc))
     }
     pub fn to_json(&self) -> Result<String, TimelineError> {
         self.validate()?;
@@ -162,95 +267,57 @@ fn insert<T>(v: &mut Vec<Key<T>>, k: Key<T>) -> Result<(), TimelineError> {
         }
     }
 }
-fn bounds<T>(v: &[Key<T>], t: f64) -> Option<(usize, usize, f64)> {
-    if v.is_empty() || !t.is_finite() {
-        return None;
-    }
-    if t <= v[0].tick as f64 {
-        return Some((0, 0, 0.0));
-    }
-    let n = v.len() - 1;
-    if t >= v[n].tick as f64 {
-        return Some((n, n, 0.0));
-    }
-    let hi = v.partition_point(|k| (k.tick as f64) <= t);
-    let lo = hi - 1;
-    Some((
-        lo,
-        hi,
-        (t - v[lo].tick as f64) / (v[hi].tick - v[lo].tick) as f64,
-    ))
-}
-fn amount(i: Interpolation, t: f64) -> f64 {
-    match i {
-        Interpolation::Step => 0.0,
-        Interpolation::Linear => t,
-        Interpolation::Smooth => t * t * (3.0 - 2.0 * t),
-    }
-}
-fn sample_scalar(v: &[Key<f64>], t: f64, angle: bool) -> Option<f64> {
-    let (l, h, a) = bounds(v, t)?;
-    if l == h {
-        return Some(v[l].value);
-    }
-    let f = amount(v[l].interpolation, a);
-    let b = if angle {
-        let d = (v[h].value - v[l].value + 12000.0).rem_euclid(24000.0) - 12000.0;
-        v[l].value + d * f
+fn sample_scalar(v: &[Key<f64>], t: f64, focal_length: bool) -> Option<f64> {
+    use crate::interpolation::{Boundary, sample};
+    let result = sample(
+        v,
+        t,
+        |value| {
+            [if focal_length {
+                1.0 / (value.to_radians() * 0.5).tan()
+            } else {
+                *value
+            }]
+        },
+        [0.0],
+        &[],
+        Boundary::Hold,
+    )?[0];
+    Some(if focal_length {
+        (1.0 / result).atan().to_degrees() * 2.0
     } else {
-        v[l].value + (v[h].value - v[l].value) * f
-    };
-    Some(if angle { b.rem_euclid(24000.0) } else { b })
-}
-fn sample_camera(v: &[Key<CameraKey>], t: f64) -> Option<CameraKey> {
-    let (l, h, a) = bounds(v, t)?;
-    if l == h {
-        return Some(v[l].value);
-    }
-    let f = amount(v[l].interpolation, a);
-    let p0 = v[l].value;
-    let p1 = v[h].value;
-    let prev = if l > 0 {
-        v[l - 1].value.position
-    } else {
-        p0.position
-    };
-    let next = if h + 1 < v.len() {
-        v[h + 1].value.position
-    } else {
-        p1.position
-    };
-    let pos = if v[l].interpolation == Interpolation::Smooth {
-        Vec3 {
-            x: cat(prev.x, p0.position.x, p1.position.x, next.x, f),
-            y: cat(prev.y, p0.position.y, p1.position.y, next.y, f),
-            z: cat(prev.z, p0.position.z, p1.position.z, next.z, f),
-        }
-    } else {
-        lerp3(p0.position, p1.position, f)
-    };
-    Some(CameraKey {
-        position: pos,
-        yaw: lerp_angle(p0.yaw, p1.yaw, f),
-        pitch: lerp_angle(p0.pitch, p1.pitch, f),
-        roll: lerp_angle(p0.roll, p1.roll, f),
+        result
     })
 }
-fn cat(a: f64, b: f64, c: f64, d: f64, t: f64) -> f64 {
-    0.5 * ((2.0 * b)
-        + (-a + c) * t
-        + (2.0 * a - 5.0 * b + 4.0 * c - d) * t * t
-        + (-a + 3.0 * b - 3.0 * c + d) * t * t * t)
-}
-fn lerp3(a: Vec3, b: Vec3, t: f64) -> Vec3 {
-    Vec3 {
-        x: a.x + (b.x - a.x) * t,
-        y: a.y + (b.y - a.y) * t,
-        z: a.z + (b.z - a.z) * t,
-    }
-}
-fn lerp_angle(a: f64, b: f64, t: f64) -> f64 {
-    a + ((b - a + 180.0).rem_euclid(360.0) - 180.0) * t
+fn sample_camera(v: &[Key<CameraKey>], t: f64) -> Option<CameraKey> {
+    use crate::interpolation::{Boundary, sample};
+    let values = sample(
+        v,
+        t,
+        |k| {
+            [
+                k.position.x,
+                k.position.y,
+                k.position.z,
+                k.yaw,
+                k.pitch,
+                k.roll,
+            ]
+        },
+        [0.0, 0.0, 0.0, 360.0, 360.0, 360.0],
+        &[[0, 1, 2]],
+        Boundary::Hold,
+    )?;
+    Some(CameraKey {
+        position: Vec3 {
+            x: values[0],
+            y: values[1],
+            z: values[2],
+        },
+        yaw: values[3],
+        pitch: values[4],
+        roll: values[5],
+    })
 }
 #[derive(Debug, Clone)]
 pub struct Editor {
@@ -259,6 +326,89 @@ pub struct Editor {
     redo: Vec<Timeline>,
 }
 impl Editor {
+    pub fn add_track(&mut self, track: crate::cinematic::Track) -> Result<(), TimelineError> {
+        self.edit(move |timeline| {
+            timeline.tracks.push(track);
+            Ok(())
+        })
+    }
+    pub fn delete_track(&mut self, id: u64) -> Result<(), TimelineError> {
+        self.edit(|timeline| {
+            let i = timeline
+                .tracks
+                .iter()
+                .position(|t| t.id == id)
+                .ok_or(TimelineError::InvalidOperation)?;
+            timeline.tracks.remove(i);
+            Ok(())
+        })
+    }
+    pub fn move_track(&mut self, id: u64, to: usize) -> Result<(), TimelineError> {
+        self.edit(|timeline| {
+            if to >= timeline.tracks.len() {
+                return Err(TimelineError::InvalidOperation);
+            }
+            let i = timeline
+                .tracks
+                .iter()
+                .position(|t| t.id == id)
+                .ok_or(TimelineError::InvalidOperation)?;
+            let track = timeline.tracks.remove(i);
+            timeline.tracks.insert(to, track);
+            Ok(())
+        })
+    }
+    pub fn update_track(
+        &mut self,
+        id: u64,
+        name: String,
+        color: u32,
+        enabled: bool,
+    ) -> Result<(), TimelineError> {
+        self.edit(move |timeline| {
+            let track = timeline
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == id)
+                .ok_or(TimelineError::InvalidOperation)?;
+            track.name = name;
+            track.color = color;
+            track.enabled = enabled;
+            Ok(())
+        })
+    }
+    pub fn edit_track_key(
+        &mut self,
+        id: u64,
+        operation: crate::cinematic::KeyEdit,
+    ) -> Result<(), TimelineError> {
+        self.edit(|timeline| {
+            timeline
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == id)
+                .ok_or(TimelineError::InvalidOperation)?
+                .data
+                .edit_key(operation)
+        })
+    }
+    pub fn set_track_key(
+        &mut self,
+        id: u64,
+        tick: u64,
+        value: crate::cinematic::KeyValue,
+        interpolation: Interpolation,
+    ) -> Result<(), TimelineError> {
+        self.edit(move |timeline| {
+            timeline
+                .tracks
+                .iter_mut()
+                .find(|t| t.id == id)
+                .ok_or(TimelineError::InvalidOperation)?
+                .data
+                .set_key(tick, value, interpolation)
+        })
+    }
     pub fn new(t: Timeline) -> Self {
         Self {
             timeline: t,
@@ -273,6 +423,9 @@ impl Editor {
         let mut candidate = self.timeline.clone();
         f(&mut candidate)?;
         candidate.validate()?;
+        if candidate == self.timeline {
+            return Ok(());
+        }
         self.undo.push(self.timeline.clone());
         if self.undo.len() > 256 {
             self.undo.remove(0);

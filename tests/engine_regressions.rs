@@ -136,7 +136,7 @@ fn invalid_insertion_is_transactional_and_nan_sampling_is_safe() {
 }
 
 #[test]
-fn time_of_day_wraps_at_twenty_four_thousand_and_export_clock_uses_game_ticks() {
+fn time_of_day_preserves_multi_day_spans_and_export_clock_uses_game_ticks() {
     let mut timeline = Timeline::default();
     for (tick, value) in [(0, 23_000.0), (10, 1_000.0)] {
         timeline
@@ -147,7 +147,7 @@ fn time_of_day_wraps_at_twenty_four_thousand_and_export_clock_uses_game_ticks() 
             })
             .unwrap();
     }
-    assert_eq!(timeline.time_of_day_at(5.0), Some(0.0));
+    assert_eq!(timeline.time_of_day_at(5.0), Some(12_000.0));
     let schedule = FrameSchedule::new(60_000, 1_001).unwrap();
     assert_eq!(
         schedule.tick_time_nanos(60_000, 20).unwrap(),

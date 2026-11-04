@@ -110,6 +110,10 @@ struct Game<'a> {
     renderer: Option<Renderer>,
     open: bool,
     dimension: &'a str,
+    target: Option<(
+        horizon_flashback::cinematic::EntityId,
+        horizon_flashback::cinematic::TargetPose,
+    )>,
 }
 struct Remote {
     session: net::Session,
@@ -134,10 +138,20 @@ impl Game<'_> {
             }),
             open: false,
             dimension: "minecraft:overworld",
+            target: None,
         }
     }
     fn native_window(&self) -> bool {
         true
+    }
+    fn flashback_target_pose(
+        &self,
+        id: horizon_flashback::cinematic::EntityId,
+        _: f32,
+    ) -> Option<horizon_flashback::cinematic::TargetPose> {
+        self.target
+            .filter(|(target, _)| *target == id)
+            .map(|(_, pose)| pose)
     }
     fn connect_server(&mut self, _: &str, _: &str) -> Result<(), String> {
         Err("No network in host double".into())
@@ -181,21 +195,21 @@ fn detached_preview_changes_render_output_and_escape_restores_it() {
     let first = Some((DVec3::new(1.0, 65.0, 2.0), 0.0, 0.0));
     let second = Some((DVec3::new(5.0, 65.0, 2.0), 20.0, 0.0));
     flashback_native::key(&mut game, "key.keyboard.f6");
-    assert_eq!(flashback_native::camera(&mut game, first), first);
+    assert_eq!(flashback_native::camera(&mut game, first, 0.0), first);
     flashback_native::fov(&game, [1.0, 65.0, 2.0], &mut 70.0);
     flashback_native::tick(&mut game);
-    flashback_native::camera(&mut game, second);
+    flashback_native::camera(&mut game, second, 0.0);
     game.view.y_rot = 20.0;
     flashback_native::fov(&game, [5.0, 65.0, 2.0], &mut 70.0);
     flashback_native::key(&mut game, "key.keyboard.f6");
     flashback_native::key(&mut game, "key.keyboard.f7");
     flashback_native::key(&mut game, "key.keyboard.home");
-    assert_eq!(flashback_native::camera(&mut game, second), first);
+    assert_eq!(flashback_native::camera(&mut game, second, 0.0), first);
     let mut degrees = 85.0;
     flashback_native::fov(&game, [1.0, 65.0, 2.0], &mut degrees);
     assert_eq!(degrees, 70.0);
     game.open = false;
-    assert_eq!(flashback_native::camera(&mut game, second), second);
+    assert_eq!(flashback_native::camera(&mut game, second, 0.0), second);
     flashback_native::unload(&game);
 }
 
@@ -204,7 +218,7 @@ fn separate_windows_do_not_share_recordings_and_split_screen_is_disabled() {
     let mut first = Game::new();
     let mut second = Game::new();
     flashback_native::key(&mut first, "key.keyboard.f6");
-    flashback_native::camera(&mut first, Some((DVec3::new(1.0, 2.0, 3.0), 0.0, 0.0)));
+    flashback_native::camera(&mut first, Some((DVec3::new(1.0, 2.0, 3.0), 0.0, 0.0)), 0.0);
     flashback_native::key(&mut second, "key.keyboard.f7");
     let mut batch = hud::HudBatch::new([640, 360]);
     flashback_native::screen(&second, &mut batch);
@@ -243,4 +257,123 @@ fn replay_step_at_extreme_timestamp_does_not_overflow() {
         },
     });
     flashback_native::key(&mut game, "key.keyboard.right");
+}
+
+#[test]
+fn cinematic_render_uses_partial_ticks_and_shares_its_clock_with_fov() {
+    use horizon_flashback::{
+        cinematic::*,
+        timeline::{Interpolation, Key, Vec3},
+    };
+    let mut game = Game::new();
+    game.open = true;
+    let storage = flashback_native::state(&game);
+    {
+        let mut session = storage.borrow_mut();
+        session.preview = true;
+        session.playing = true;
+        session.playhead = 5.0;
+        session.duration = 10;
+        session.editor.timeline.tracks = vec![
+            Track::new(
+                1,
+                TrackData::Orbit(vec![
+                    Key {
+                        tick: 0,
+                        value: OrbitKey {
+                            center: Vec3::default(),
+                            distance: 10.0,
+                            yaw: 0.0,
+                            pitch: 0.0,
+                        },
+                        interpolation: Interpolation::Linear,
+                    },
+                    Key {
+                        tick: 10,
+                        value: OrbitKey {
+                            center: Vec3::default(),
+                            distance: 10.0,
+                            yaw: 180.0,
+                            pitch: 0.0,
+                        },
+                        interpolation: Interpolation::Linear,
+                    },
+                ]),
+            ),
+            Track::new(
+                2,
+                TrackData::Fov(vec![
+                    Key {
+                        tick: 0,
+                        value: 60.0,
+                        interpolation: Interpolation::Linear,
+                    },
+                    Key {
+                        tick: 10,
+                        value: 120.0,
+                        interpolation: Interpolation::Linear,
+                    },
+                ]),
+            ),
+        ];
+    }
+    let camera = flashback_native::camera(&mut game, None, 0.5).unwrap();
+    assert!((camera.1 - 99.0).abs() < 1e-6);
+    let mut fov = 70.0;
+    flashback_native::fov(&game, [0.0; 3], &mut fov);
+    let expected = storage.borrow().editor.timeline.fov_at(5.5).unwrap();
+    assert!((f64::from(fov) - expected).abs() < 1e-5);
+    let id = EntityId::from_u128(42);
+    game.target = Some((
+        id,
+        TargetPose {
+            position: Vec3 {
+                x: 10.0,
+                y: 64.0,
+                z: 20.0,
+            },
+            height: 2.0,
+            eye_height: 1.5,
+            yaw: 0.0,
+            body_yaw: 0.0,
+            head_yaw: 0.0,
+            pitch: 0.0,
+        },
+    ));
+    {
+        let mut session = storage.borrow_mut();
+        session.playing = false;
+        session.editor.timeline.tracks.push(Track::new(
+            3,
+            TrackData::Tracking(vec![Key {
+                tick: 0,
+                interpolation: Interpolation::Step,
+                value: TrackingKey {
+                    target: id,
+                    body_part: BodyPart::Head,
+                    yaw_offset: 0.0,
+                    pitch_offset: 0.0,
+                    position_offset: Vec3::default(),
+                    view_offset: Vec3::default(),
+                    roll: 0.0,
+                },
+            }]),
+        ));
+    }
+    let camera = flashback_native::camera(&mut game, None, 0.75).unwrap();
+    assert_eq!(camera.0, DVec3::new(10.0, 65.5, 20.0));
+    {
+        let mut session = storage.borrow_mut();
+        session.editor.timeline.tracks = vec![Track::new(
+            1,
+            TrackData::Fov(vec![Key {
+                tick: 0,
+                value: 90.0,
+                interpolation: Interpolation::Step,
+            }]),
+        )];
+    }
+    assert!(flashback_native::camera(&mut game, None, 0.5).is_none());
+    flashback_native::fov(&game, [0.0; 3], &mut fov);
+    assert!((fov - 90.0).abs() < 1e-5);
 }

@@ -15,12 +15,12 @@ validation are separate gates.
 | Local-player samples | Position, velocity, rotation, movement flags and selected slot on the packet tape clock | Core validation and native transport tests; independent actor, equipment and animation incomplete |
 | Replay input/pause | Queued interaction input suppressed; paused client-level tick skipped while editor hooks remain available | Host-double tests and native typecheck; all animations and deterministic stepping unfinished |
 | Offline world playback | Socketless Session transport, timed packet delivery, pause/speed, prefix replay for seeking | Native Session tests; rendered scenes NOT TESTED |
-| Camera timeline | Step, linear, Catmull-Rom positions, shortest-angle rotations | Core tests |
-| FOV/speed/time tracks | Core sampling and serialization | Core tests; incomplete native/editor exposure |
+| Cinematic tracks | Eleven typed families, sided interpolation, numeric Java curve fixtures, transactional editing, orbit and entity tracking, native preview | Core and native adapter tests; host-specific effects/UI incomplete |
+| FOV/speed/time tracks | Core sampling and serialization; FOV preview follows the fractional render clock | Core/native adapter tests; real-time map and host simulation effects incomplete |
 | Editor history | Camera key copy, move, delete, undo/redo | Core tests |
 | Native editor | Basic toolbar, camera row, seek, key insertion, save/load | Native adapter typechecks; live UI not tested |
 | Original Flashback UI parity | Not implemented | No screenshot comparison |
-| Orbit/entity tracking/shake/freeze/timelapse/audio/block override | Not implemented | No claim |
+| Orbit/entity tracking/shake/freeze/timelapse/audio/block override | Data and curve sampling exist; only orbit/tracking camera preview is integrated | Shake, freeze, timelapse clock, audio, block override host behavior and controls remain |
 | Entity/particle/audio/skin rendering parity | Not implemented | No claim |
 | Flashback ZIP recording import/export | Not implemented | `.hfr` and `.hfnet` are different formats |
 | Video/audio/screenshot export and queue | Not implemented | Frame scheduling math only |

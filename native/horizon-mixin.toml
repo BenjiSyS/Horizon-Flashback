@@ -59,6 +59,12 @@ file = "crates/horizon-client/src/game.rs"
 name = "flashback_player"
 source = "player.rs"
 
+[[module]]
+id = "cinematic"
+file = "crates/horizon-client/src/game.rs"
+name = "flashback_cinematic"
+source = "cinematic.rs"
+
 [[injection]]
 id = "player-tick"
 kind = "HEAD"
@@ -121,7 +127,7 @@ kind = "HEAD"
 cancellable = true
 target = "horizon_client::game::perspective::Game<'_>::camera_view"
 helper = "camera.rs"
-bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}]
+bindings = [{name = "game", ty = "&mut Game<'_>", value = "self"}, {name = "partial", ty = "f32", value = "partial"}]
 
 [[injection]]
 id = "fov"

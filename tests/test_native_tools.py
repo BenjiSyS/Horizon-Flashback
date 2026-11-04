@@ -32,10 +32,15 @@ class BundleTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_only_source_allowlist_is_staged(self):
+        fixtures = self.root / "tests/fixtures"
+        fixtures.mkdir(parents=True)
+        (fixtures / "interpolation-java.json").write_text('{"numeric_reference": true}')
+        (fixtures / "private.json").write_text("must never enter bundle")
         bundle = NATIVE.bundle()
         paths = {path.relative_to(bundle).as_posix() for path in bundle.rglob("*") if path.is_file()}
         self.assertEqual(paths, {
-            "flashback/horizon-mixin.toml", "flashback/engine/Cargo.toml", "flashback/engine/src/lib.rs"
+            "flashback/horizon-mixin.toml", "flashback/engine/Cargo.toml", "flashback/engine/src/lib.rs",
+            "flashback/engine/tests/fixtures/interpolation-java.json"
         })
         self.assertEqual(NATIVE.bundle(), bundle)
 
